@@ -1,0 +1,136 @@
+services:
+  minio:
+    image: minio/minio
+    hostname: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/minio:/data
+
+  fe:
+    image: apache/doris:fe-2.1.10
+    hostname: fe
+    environment:
+     - FE_SERVERS=fe1:127.0.0.1:9010
+     - FE_ID=1
+    network_mode: host
+
+  be:
+    image: apache/doris:be-2.1.10
+    hostname: be
+    environment:
+     - FE_SERVERS=fe1:127.0.0.1:9010
+     - BE_ADDR=127.0.0.1:9050
+    depends_on:
+      - fe
+    network_mode: host
+
+  trino:
+    image: trinodb/trino:476
+    hostname: trino-coordinator
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+
+  hive-metastore:
+    # This is the Hive Metastore service
+    image: 'starburstdata/hive:3.1.2-e.18'
+    # This is the hive server hostname
+    hostname: hive-metastore
+    ports:
+      # Expose Metastore Thrift service on port 9083.
+      - '9083:9083'
+    # In case of service/container crash, the container will restart.
+    restart: always
+    environment:
+      # JDBC driver for connecting Hive Metastore to Postgres
+      HIVE_METASTORE_DRIVER: org.postgresql.Driver
+      
+      # JDBC URL for the Postgres DB. Ensure the hostname and port match your Postgres service.
+      HIVE_METASTORE_JDBC_URL: jdbc:postgresql://metastore_db:5432/hive_metastore
+      
+      # Username for connecting to Postgres from Hive. Change this if you modified POSTGRES_USER.
+      HIVE_METASTORE_USER: hive
+      
+      # Password for connecting to Postgres from Hive. Change this if you modified POSTGRES_PASSWORD.
+      HIVE_METASTORE_PASSWORD: hive
+      
+      # Location of the Hive warehouse where Delta Lake data is stored.
+      # You can modify this to match the bucket or path in your MinIO setup.
+      HIVE_METASTORE_WAREHOUSE_DIR: s3://spark-delta-lake/
+      
+      # MinIO endpoint. Replace this with your MinIO address and port.
+      S3_ENDPOINT: http://minio:9000
+      
+      # Access key for MinIO. Change this to your actual MinIO access key.
+      S3_ACCESS_KEY: N1a96gdfgdfgdfgdfgKvOa
+      
+      # Secret key for MinIO. Change this to your actual MinIO secret key.
+      S3_SECRET_KEY: lgdfgfdgdfgdfgfdgdfgdfgdfgmKnwGWaCD
+      
+      # Use path-style access. Keep this set to "true" for MinIO compatibility.
+      S3_PATH_STYLE_ACCESS: "true"
+      
+      # The region for S3 storage. For MinIO, leave this blank.
+      REGION: "ap-northeast-1"
+
+      # Following fields are placeholders for integration with other cloud services like Google Cloud and Azure.
+      # These can be left blank unless you're using one of those services.
+      GOOGLE_CLOUD_KEY_FILE_PATH: ""
+      AZURE_ADL_CLIENT_ID: ""
+      AZURE_ADL_CREDENTIAL: ""
+      AZURE_ADL_REFRESH_URL: ""
+      AZURE_ABFS_STORAGE_ACCOUNT: ""
+      AZURE_ABFS_ACCESS_KEY: ""
+      AZURE_WASB_STORAGE_ACCOUNT: ""
+      AZURE_ABFS_OAUTH: ""
+      AZURE_ABFS_OAUTH_TOKEN_PROVIDER: ""
+      AZURE_ABFS_OAUTH_CLIENT_ID: ""
+      AZURE_ABFS_OAUTH_SECRET: ""
+      AZURE_ABFS_OAUTH_ENDPOINT: ""
+      AZURE_WASB_ACCESS_KEY: ""
+
+      # Define Hive Metastore admin role. You can change the role if needed.
+      HIVE_METASTORE_USERS_IN_ADMIN_ROLE: "admin"
+    healthcheck:
+      # Health check to confirm if the Hive Metastore is running on port 9083.
+      test: bash -c "exec 6<> /dev/tcp/localhost/9083"
+    depends_on:
+      - postgres
+
+  # hive-metastore:
+  #   image: apache/hive:4.0.0-alpha-2
+  #   environment:
+  #     - SERVICE_NAME=metastore
+  #     - DB_DRIVER=postgres
+  #     - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/hive_metastore -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=hive
+  #   ports:
+  #     - "9083:9083"
+  #   volumes:
+  #     - ./data/delta/osdp/spark-warehouse:/opt/spark/work-dir/data/delta/osdp/spark-warehouse
+  #   depends_on:
+  #     - postgres
+
+  postgres:
+    image: postgres:16
+    hostname: metastore_db
+    # In case of service/container crash, the container will restart.
+    restart: always
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=md5
+      - POSTGRES_DB=hive_metastore
+      - POSTGRES_USER=hive
+      - POSTGRES_PASSWORD=hive
+    ports:
+      - "5432:5432"  # PostgreSQL default port
+    volumes:
+      - ./data/pg-data:/var/lib/postgresql/data
+  
+
